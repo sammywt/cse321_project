@@ -1,0 +1,111 @@
+
+
+
+import sensor, image, time
+from machine import LED, Pin
+
+# ---------- Camera setup ----------
+sensor.reset()
+sensor.set_pixformat(sensor.RGB565)      # color so we can draw colored boxes
+sensor.set_framesize(sensor.QVGA)        # 320x240
+sensor.set_contrast(1)
+sensor.set_brightness(0)
+sensor.skip_frames(time=1500)
+
+# If image looks flipped:
+# sensor.set_vflip(True)
+# sensor.set_hmirror(True)
+
+# ---------- Face cascade (built-in ROM) ----------
+face_cascade = image.HaarCascade("/rom/haarcascade_frontalface.cascade", stages=25)
+
+THRESH = 0.35
+SCALE  = 1.25
+BOX_COLOR = (0, 255, 0)
+THICKNESS = 2
+
+# ---------- LEDs ----------
+led_red   = LED("LED_RED")
+led_green = LED("LED_GREEN")
+led_blue  = LED("LED_BLUE")
+
+def leds_off():
+    led_red.off()
+    led_green.off()
+    led_blue.off()
+
+leds_off()
+
+# ---------- pump GPIO ----------
+# Choose a digital pad from your pinout. Example: D0 / P0_10
+PUMP_PIN_NAME = "PG12"     # botton left pin (D0)
+pump = Pin(PUMP_PIN_NAME, Pin.OUT)
+pump.value(0)  # pump off
+
+# ---------- Pump sequence ----------
+def run_pump_sequence():
+    # 1- red for 3s, pump off
+    print("Sequence: RED (pre-pump)")
+    led_red.on()
+    led_green.off()
+    led_blue.off()
+    pump.value(0)
+    time.sleep_ms(3000)
+
+    # 2- green for 5s, pump ON
+    print("Sequence: GREEN (pump ON)")
+    led_red.off()
+    led_green.on()
+    led_blue.off()
+    pump.value(1)   # HIGH -> tell driver to run pump
+    time.sleep_ms(5000)
+
+    # 3- blue for 3s, pump OFF
+    print("Sequence: BLUE (cooldown, pump OFF)")
+    led_red.off()
+    led_green.off()
+    led_blue.on()
+    pump.value(0)
+    time.sleep_ms(3000)
+
+    # 4- all off, return to detection
+    leds_off()
+    print("Sequence done, resuming face detection")
+
+# ---------- main loop ----------
+clock = time.clock()
+print("Frontal face detection running...")
+
+while True:
+    clock.tick()
+    img = sensor.snapshot()
+    img.histeq()
+
+    faces = img.find_features(face_cascade, threshold=THRESH, scale_factor=SCALE)
+
+    if faces:
+        # boxes for visual feedback
+        for r in faces:
+            print("rect:", r)
+            img.draw_rectangle(r, color=BOX_COLOR, thickness=THICKNESS)
+
+        print("FACE DETECTED | count:", len(faces))
+        # pump/LED sequence (detection pauses while this runs)
+        run_pump_sequence()
+        # After this returns, loop continues and face detection resumes
+
+
+
+
+# DOCS
+# https://docs.arduino.cc/resources/datasheets/ABX00051-datasheet.pdf
+# https://docs.arduino.cc/resources/pinouts/ABX00051-full-pinout.pdf
+# https://docs.arduino.cc/hardware/nicla-vision/#features
+# https://docs.arduino.cc/tutorials/nicla-vision/getting-started/
+# https://docs.openmv.io/library/omv.sensor.html
+# https://docs.openmv.io/openmvcam/tutorial/script_structure.html
+# https://docs.openmv.io/library/omv.image.html
+# https://www.digikey.bg/en/maker/projects/how-to-build-a-face-tracking-
+# pan-tilt-camera-with-openmv/91ef4610324847d38f33e3e9ded7e747
+# https://www.cardinalpeak.com/blog/building-edge-ml-ai-applications-using-the-openmv-cam
+# https://www.kendryte.com/k230_canmv/en/main/example/omv/image_process.html
