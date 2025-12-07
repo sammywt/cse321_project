@@ -1,5 +1,3 @@
-
-
 # openMV libraries (built into openMV firmware running on nicla vision) for...
 # sensor - controlling camera sensor (start / stop, resolution, format, gain, exposure, etc..)
 # image - image processing  - defines image class and methods to call on images
@@ -13,23 +11,31 @@
 import sensor, image, time
 from machine import LED, Pin
 
+print(">>> BOOTING main.py FROM BOARD <<<")
+
+boot_led = LED("LED_RED")
+boot_led.on()
+time.sleep_ms(500)
+boot_led.off()
+
+
 # ---------- camera setup ----------
 # reboots camera sensor , loads default settings
-sensor.reset()
+# sensor.reset()
 # sets how image data is stored per pixel (565 = 5 bits red, 6 bits green, 5 bitds blue)
 # grayscale potentially faster? but cannot have color boxes w/ grayscale
-sensor.set_pixformat(sensor.RGB565)
+# sensor.set_pixformat(sensor.RGB565)
 # sets output resolution - QVGA = 320x240
 # (fast enough for face detection, large enough for full face, doesnt slow down Haar Cascade too much
-sensor.set_framesize(sensor.QVGA)        # 320x240
+# sensor.set_framesize(sensor.QVGA)        # 320x240
 # adjust image contrast slightly above normal (range -3 to 3)
-sensor.set_contrast(1)
+# sensor.set_contrast(1)
 # default brightness level (range -3 to 3)
-sensor.set_brightness(0)
+# sensor.set_brightness(0)
 # wait 1.5 seconsd while throwing away first frames
 # lets auto exposure, auto white balance, gain control to settle
 # ensures first frame used is stable / illuminated
-sensor.skip_frames(time=1500)
+# sensor.skip_frames(time=1500)
 
 # If image looks flipped:
 # sensor.set_vflip(True)
@@ -56,6 +62,8 @@ led_red   = LED("LED_RED")
 led_green = LED("LED_GREEN")
 led_blue  = LED("LED_BLUE")
 
+SCAN_LED = LED("LED_BLUE")
+
 def leds_off():
     led_red.off()
     led_green.off()
@@ -67,6 +75,40 @@ leds_off()
 PUMP_PIN_NAME = "PG12"     # botton left pin (D0)
 pump = Pin(PUMP_PIN_NAME, Pin.OUT)
 pump.value(0)  # pump off
+
+def init_camera():
+    # give hardware a moment before touching sensor
+    time.sleep_ms(1000)
+    for attempt in range(5):
+        try:
+            print("initializing camera, attempt ", attempt+1)
+
+            sensor.reset()
+            sensor.set_pixformat(sensor.RGB565)
+            sensor.set_framesize(sensor.QVGA)
+            sensor.set_contrast(1)
+            sensor.set_brightness(0)
+
+            sensor.skip_frames(time=2000)
+
+            # test to confirm sensor alive
+            _ = sensor.snapshot()
+            print("camera init ok")
+            return
+        except Exception as e:
+            print("Camera init failed: ", e)
+            time.sleep_ms(500)
+
+    print("FATAL, camera failed after 5 attempts")
+    while True:
+        led_red.on()
+        time.sleep_ms(200)
+        led_red.off()
+        time.sleep_ms(200)
+        led_green.on()
+        time.sleep_ms(200)
+        led_green.off()
+        time.sleep_ms(200)
 
 # ---------- pump sequence ----------
 def run_pump_sequence():
@@ -105,10 +147,22 @@ print("Frontal face detection running...")
 while True:
     # update clock (start timing frame)
     clock.tick()
+
+    try:
     # capture one image frame from camera sensor
-    img = sensor.snapshot()
+        img = sensor.snapshot()
+    except Exception as e:
+        print("Frame error in loop: ", e)
+        init_camera()
+        continue
+
     # histogram equalization (improves contrast, makes detection work better)
     img.histeq()
+
+    # heartbeat blink so we know its detecting
+    SCAN_LED.on()
+    time.sleep_ms(30)
+    SCAN_LED.off()
 
 # actually run face detection algo
     faces = img.find_features(face_cascade, threshold=THRESH, scale_factor=SCALE)
